@@ -1,38 +1,81 @@
-import { AuthProvider, useAuth } from './lib/auth';
+import { Authenticator } from '@aws-amplify/ui-react';
+import '@aws-amplify/ui-react/styles.css';
 import { ThemeProvider } from './lib/theme';
-import { AuthForm } from './components/AuthForm';
 import { NewUserDashboard } from './components/NewUserDashboard';
 import { NewITDashboard } from './components/NewITDashboard';
 
-function AppContent() {
-  const { user, profile, loading } = useAuth();
+const formFields = {
+  signUp: {
+    name: {
+      label: 'Full Name:',
+      placeholder: 'Enter your full name',
+      isRequired: true,
+      order: 1
+    },
+    email: {
+      label: 'Email:',
+      placeholder: 'Enter your email',
+      isRequired: true,
+      order: 2
+    },
+    password: {
+      label: 'Password:',
+      placeholder: 'Enter your password',
+      isRequired: true,
+      order: 3
+    },
+    confirm_password: {
+      label: 'Confirm Password:',
+      order: 4
+    },
+    'custom:role': {
+      label: 'Role:',
+      placeholder: 'Select your role',
+      isRequired: true,
+      order: 5
+    }
+  }
+};
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl mb-4 animate-pulse">
-            <span className="text-3xl">🎫</span>
+const components = {
+  SignUp: {
+    FormFields() {
+      return (
+        <>
+          <Authenticator.SignUp.FormFields />
+          <div className="amplify-field amplify-field-group">
+            <label className="amplify-label">Role:</label>
+            <select 
+              name="custom:role" 
+              className="amplify-input"
+              required
+            >
+              <option value="">Select your role</option>
+              <option value="user">User</option>
+              <option value="it_team">IT Team</option>
+            </select>
           </div>
-          <p className="text-slate-600 dark:text-slate-300 font-medium">Loading...</p>
-        </div>
-      </div>
-    );
+        </>
+      );
+    }
   }
-
-  if (!user || !profile) {
-    return <AuthForm />;
-  }
-
-  return profile.role === 'it_team' ? <NewITDashboard /> : <NewUserDashboard />;
-}
+};
 
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <Authenticator 
+        formFields={formFields}
+        components={components}
+      >
+        {({ signOut, user }) => (
+          <main>
+            <h1>Hello {user?.username}</h1>
+            <button onClick={signOut}>Sign out</button>
+            <NewUserDashboard />
+          </main>
+        )}
+      </Authenticator>
     </ThemeProvider>
   );
 }
