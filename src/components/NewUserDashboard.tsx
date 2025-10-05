@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../lib/supabase';
 import { Bell, Plus, Search, Clock, CheckCircle2, MessageSquare, AlertCircle } from 'lucide-react';
-import { Sidebar } from './Sidebar';
+// import { Sidebar } from './Sidebar';
 import { ThemeToggle } from './ThemeToggle';
 import { StatusBadge } from './StatusBadge';
 import { PriorityBadge } from './PriorityBadge';
@@ -66,8 +66,8 @@ export function NewUserDashboard({ user, profile, signOut }: Props) {
   if (selectedTicket) {
     return (
       <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
-        <Sidebar activeView={activeView} onViewChange={setActiveView} />
-        <div className="flex-1 ml-64">
+        {/* <Sidebar activeView={activeView} onViewChange={setActiveView} /> */}
+        <div className="flex-1">
           <TicketDetails
             ticket={selectedTicket}
             onBack={() => {
@@ -385,9 +385,9 @@ export function NewUserDashboard({ user, profile, signOut }: Props) {
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
-      <Sidebar activeView={activeView} onViewChange={setActiveView} />
+      {/* <Sidebar activeView={activeView} onViewChange={setActiveView} /> */}
 
-      <div className="flex-1 ml-64 overflow-auto">
+      <div className="flex-1 overflow-auto">
         <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10">
           <div className="px-8 py-4">
             <div className="flex items-center justify-between">
