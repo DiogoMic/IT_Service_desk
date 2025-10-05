@@ -1,9 +1,18 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User } from '@supabase/supabase-js';
-import { supabase } from './supabase';
-import type { Database } from './database.types';
+import { getCurrentUser, signIn as cognitoSignIn, signOut as cognitoSignOut, signUp as cognitoSignUp } from 'aws-amplify/auth';
+import { api } from './supabase';
 
-type Profile = Database['public']['Tables']['profiles']['Row'];
+interface User {
+  userId: string;
+  username: string;
+}
+
+interface Profile {
+  id: string;
+  email: string;
+  full_name: string;
+  role: 'user' | 'it_team';
+}
 
 interface AuthContextType {
   user: User | null;
@@ -22,73 +31,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      (async () => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await fetchProfile(session.user.id);
-        } else {
-          setProfile(null);
-          setLoading(false);
-        }
-      })();
-    });
-
-    return () => subscription.unsubscribe();
+    checkAuthState();
   }, []);
 
-  const fetchProfile = async (userId: string) => {
+  const checkAuthState = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) throw error;
-      setProfile(data);
-    } catch (error) {
-      console.error('Error fetching profile:', error);
+      const currentUser = await getCurrentUser();
+      setUser({ userId: currentUser.userId, username: currentUser.username });
+      await fetchProfile(currentUser.userId);
+    } catch {
+      setUser(null);
+      setProfile(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  };
-
-  const signUp = async (email: string, password: string, fullName: string, role: 'user' | 'it_team') => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
-
-    if (data.user) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: data.user.id,
-          email,
-          full_name: fullName,
-          role,
-        });
-
-      if (profileError) throw profileError;
+  const fetchProfile = async (userId: string) => {
+    try {
+      const response = await api.get(`/profiles/${userId}`);
+      setProfile(response.response.body);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
     }
   };
 
+  const signIn = async (email: string, password: string) => {
+    await cognitoSignIn({ username: email, password });
+    await checkAuthState();
+  };
+
+  const signUp = async (email: string, password: string, fullName: string, role: 'user' | 'it_team') => {
+    await cognitoSignUp({
+      username: email,
+      password,
+      options: {
+        userAttributes: {
+          email,
+          name: fullName,
+          'custom:role': role
+        }
+      }
+    });
+  };
+
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    await cognitoSignOut();
+    setUser(null);
+    setProfile(null);
   };
 
   return (
