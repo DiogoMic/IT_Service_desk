@@ -1,10 +1,7 @@
-import { useState, useEffect } from 'react';
 import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import { ThemeProvider } from './lib/theme';
 import { NewUserDashboard } from './components/NewUserDashboard';
-import { NewITDashboard } from './components/NewITDashboard';
-import { api } from './lib/supabase';
 
 const formFields = {
   signUp: {
@@ -58,42 +55,22 @@ const components = {
 };
 
 function AppContent({ signOut, user }) {
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (user) {
-      fetchUserProfile(user.userId);
-    }
-  }, [user]);
-
-  const fetchUserProfile = async (userId) => {
-    try {
-      const response = await api.get(`/profiles/${userId}`);
-      setProfile(response.response.body);
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl mb-4 animate-pulse">
-            <span className="text-3xl">🎫</span>
-          </div>
-          <p className="text-slate-600 font-medium">Loading...</p>
-        </div>
+  // For now, default to user dashboard
+  // TODO: Fetch user profile from database to determine role
+  return (
+    <div>
+      <div className="p-4 bg-gray-100 flex justify-between items-center">
+        <h1>Welcome {user?.username}</h1>
+        <button 
+          onClick={signOut}
+          className="bg-red-500 text-white px-4 py-2 rounded"
+        >
+          Sign out
+        </button>
       </div>
-    );
-  }
-
-  return profile?.role === 'it_team' ? 
-    <NewITDashboard user={user} profile={profile} signOut={signOut} /> : 
-    <NewUserDashboard user={user} profile={profile} signOut={signOut} />;
+      <NewUserDashboard />
+    </div>
+  );
 }
 
 export default function App() {
