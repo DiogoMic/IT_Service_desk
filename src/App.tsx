@@ -1,7 +1,7 @@
 import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import { ThemeProvider } from './lib/theme';
-import { SimpleDashboard } from './components/SimpleDashboard';
+import { NewUserDashboard } from './components/NewUserDashboard';
 
 const formFields = {
   signUp: {
@@ -55,21 +55,18 @@ const components = {
 };
 
 function AppContent({ signOut, user }) {
-  // For now, default to user dashboard
-  // TODO: Fetch user profile from database to determine role
+  // Mock profile for now - TODO: fetch from database
+  const mockProfile = {
+    full_name: user?.username || 'User',
+    role: 'user'
+  };
+
   return (
-    <div>
-      <div className="p-4 bg-gray-100 flex justify-between items-center">
-        <h1>Welcome {user?.username}</h1>
-        <button 
-          onClick={signOut}
-          className="bg-red-500 text-white px-4 py-2 rounded"
-        >
-          Sign out
-        </button>
-      </div>
-      <SimpleDashboard />
-    </div>
+    <NewUserDashboard 
+      user={user} 
+      profile={mockProfile} 
+      signOut={signOut} 
+    />
   );
 }
 

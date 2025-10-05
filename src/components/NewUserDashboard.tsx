@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../lib/auth';
 import { api } from '../lib/supabase';
 import { Bell, Plus, Search, Clock, CheckCircle2, MessageSquare, AlertCircle } from 'lucide-react';
 import { Sidebar } from './Sidebar';
@@ -9,15 +8,25 @@ import { PriorityBadge } from './PriorityBadge';
 import { CreateTicketModal } from './CreateTicketModal';
 import { TicketDetails } from './TicketDetails';
 import { FeedbackModal } from './FeedbackModal';
-import type { Database } from '../lib/database.types';
 
-type TicketType = Database['public']['Tables']['tickets']['Row'] & {
+interface TicketType {
+  id: string;
+  ticket_number: string;
+  title: string;
+  status: string;
+  priority: string;
+  created_at: string;
   ticket_categories: { name: string };
   profiles: { full_name: string };
-};
+}
 
-export function NewUserDashboard() {
-  const { profile, user } = useAuth();
+interface Props {
+  user?: any;
+  profile?: any;
+  signOut?: () => void;
+}
+
+export function NewUserDashboard({ user, profile, signOut }: Props) {
   const [activeView, setActiveView] = useState('dashboard');
   const [tickets, setTickets] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,20 +42,13 @@ export function NewUserDashboard() {
   const fetchTickets = async () => {
     if (!user) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('tickets')
-      .select(`
-        *,
-        ticket_categories (name),
-        profiles!tickets_user_id_fkey (full_name)
-      `)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setTickets(data as TicketType[]);
-    }
-    setLoading(false);
+    
+    // TODO: Replace with actual API call to AWS Lambda
+    // For now, using mock data
+    setTimeout(() => {
+      setTickets([]);
+      setLoading(false);
+    }, 1000);
   };
 
   const stats = {
