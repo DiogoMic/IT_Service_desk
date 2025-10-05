@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { Ticket, AlertCircle, User, Mail } from 'lucide-react';
 import { TicketDetails } from './TicketDetails';

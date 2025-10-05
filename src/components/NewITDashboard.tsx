@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/auth';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/supabase';
 import { Bell, Plus, Search, ArrowUp, ArrowDown, TrendingUp, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { ThemeToggle } from './ThemeToggle';

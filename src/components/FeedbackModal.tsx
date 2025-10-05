@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { X, Star, AlertCircle } from 'lucide-react';
 

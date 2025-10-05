@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/supabase';
 import { TrendingUp, Award, Clock } from 'lucide-react';
 import type { Database } from '../lib/database.types';
 

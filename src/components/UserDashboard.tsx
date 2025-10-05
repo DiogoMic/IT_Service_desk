@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/auth';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/supabase';
 import { Plus, LogOut, Ticket, Clock, CheckCircle, XCircle, MessageSquare } from 'lucide-react';
 import { CreateTicketModal } from './CreateTicketModal';
 import { TicketDetails } from './TicketDetails';

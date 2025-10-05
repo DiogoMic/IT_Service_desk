@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { ArrowLeft, Send, Paperclip, Download, Clock, User, AlertCircle } from 'lucide-react';
 import type { Database } from '../lib/database.types';

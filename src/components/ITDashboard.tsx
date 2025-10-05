@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/auth';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/supabase';
 import { LogOut, Users, TrendingUp } from 'lucide-react';
 import { ITTicketList } from './ITTicketList';
 import { ITAnalytics } from './ITAnalytics';
