@@ -27,12 +27,6 @@ const formFields = {
     confirm_password: {
       label: 'Confirm Password:',
       order: 4
-    },
-    'custom:role': {
-      label: 'Role:',
-      placeholder: 'Select your role',
-      isRequired: true,
-      order: 5
     }
   }
 };
