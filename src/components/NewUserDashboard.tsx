@@ -5,9 +5,9 @@ import { Bell, Plus, Search, Clock, CheckCircle2, MessageSquare, AlertCircle } f
 import { ThemeToggle } from './ThemeToggle';
 import { StatusBadge } from './StatusBadge';
 import { PriorityBadge } from './PriorityBadge';
-import { CreateTicketModal } from './CreateTicketModal';
-import { TicketDetails } from './TicketDetails';
-import { FeedbackModal } from './FeedbackModal';
+// import { CreateTicketModal } from './CreateTicketModal';
+// import { TicketDetails } from './TicketDetails';
+// import { FeedbackModal } from './FeedbackModal';
 
 interface TicketType {
   id: string;
@@ -68,13 +68,16 @@ export function NewUserDashboard({ user, profile, signOut }: Props) {
       <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
         {/* <Sidebar activeView={activeView} onViewChange={setActiveView} /> */}
         <div className="flex-1">
-          <TicketDetails
-            ticket={selectedTicket}
-            onBack={() => {
-              setSelectedTicket(null);
-              fetchTickets();
-            }}
-          />
+          <div className="p-8">
+            <button 
+              onClick={() => setSelectedTicket(null)}
+              className="mb-4 px-4 py-2 bg-gray-500 text-white rounded"
+            >
+              Back
+            </button>
+            <h1 className="text-2xl font-bold">Ticket Details</h1>
+            <p>Ticket: {selectedTicket.title}</p>
+          </div>
         </div>
       </div>
     );
@@ -425,10 +428,10 @@ export function NewUserDashboard({ user, profile, signOut }: Props) {
         {renderContent()}
       </div>
 
-      {showCreateModal && <CreateTicketModal onClose={() => setShowCreateModal(false)} onSuccess={fetchTickets} />}
-      {feedbackTicket && (
+      {/* {showCreateModal && <CreateTicketModal onClose={() => setShowCreateModal(false)} onSuccess={fetchTickets} />} */}
+      {/* {feedbackTicket && (
         <FeedbackModal ticket={feedbackTicket} onClose={() => setFeedbackTicket(null)} onSuccess={fetchTickets} />
-      )}
+      )} */}
     </div>
   );
 }
