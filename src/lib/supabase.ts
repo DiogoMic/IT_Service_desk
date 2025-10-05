@@ -1,11 +1,17 @@
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from './database.types';
+import { get, post, put } from 'aws-amplify/api';
+import { getCurrentUser, signIn, signOut, signUp } from 'aws-amplify/auth';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// API helper functions
+export const api = {
+  get: (path: string) => get({ apiName: 'itservicedesk', path }),
+  post: (path: string, data: any) => post({ apiName: 'itservicedesk', path, options: { body: data } }),
+  put: (path: string, data: any) => put({ apiName: 'itservicedesk', path, options: { body: data } })
+};
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
-}
-
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+// Auth helper functions
+export const auth = {
+  getCurrentUser,
+  signIn,
+  signOut,
+  signUp
+};
