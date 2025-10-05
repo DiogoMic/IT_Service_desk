@@ -214,6 +214,8 @@ Resources:
         - email
       UsernameAttributes:
         - email
+      LambdaConfig:
+        PostConfirmation: !GetAtt CognitoTriggerFunction.Arn
       Schema:
         - Name: email
           AttributeDataType: String
@@ -406,6 +408,71 @@ Resources:
       DisplayName: IT Service Desk Notifications
 
   # Lambda Functions
+  CognitoTriggerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-cognito-trigger'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import psycopg2
+          import os
+          
+          def handler(event, context):
+              try:
+                  user_attributes = event['request']['userAttributes']
+                  cognito_user_id = event['userName']
+                  email = user_attributes.get('email')
+                  full_name = user_attributes.get('name')
+                  role = user_attributes.get('custom:role', 'user')
+                  
+                  conn = psycopg2.connect(
+                      host=os.environ['DB_HOST'],
+                      database=os.environ['DB_NAME'],
+                      user=os.environ['DB_USER'],
+                      password=os.environ['DB_PASSWORD']
+                  )
+                  
+                  cursor = conn.cursor()
+                  cursor.execute("""
+                      INSERT INTO profiles (cognito_user_id, email, full_name, role)
+                      VALUES (%s, %s, %s, %s)
+                      ON CONFLICT (cognito_user_id) DO NOTHING
+                  """, (cognito_user_id, email, full_name, role))
+                  
+                  conn.commit()
+                  conn.close()
+                  
+                  return event
+                  
+              except Exception as e:
+                  print(f"Error creating user profile: {str(e)}")
+                  return event
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
+  CognitoTriggerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CognitoTriggerFunction
+      Action: lambda:InvokeFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
+
   NotificationFunction:
     Type: AWS::Lambda::Function
     Properties:
