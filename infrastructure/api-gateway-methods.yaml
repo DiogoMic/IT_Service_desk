@@ -1,0 +1,93 @@
+# API Gateway Method Configurations
+# Add these to the CloudFormation template or configure manually in the console
+
+# GET /tickets
+TicketsGetMethod:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RestApiId: !Ref ApiGateway
+    ResourceId: !Ref TicketsResource
+    HttpMethod: GET
+    AuthorizationType: AWS_IAM
+    Integration:
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetTicketsFunction.Arn}/invocations'
+
+# POST /tickets
+TicketsPostMethod:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RestApiId: !Ref ApiGateway
+    ResourceId: !Ref TicketsResource
+    HttpMethod: POST
+    AuthorizationType: AWS_IAM
+    Integration:
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateTicketFunction.Arn}/invocations'
+
+# PUT /tickets/{id}
+TicketsPutMethod:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RestApiId: !Ref ApiGateway
+    ResourceId: !Ref TicketByIdResource
+    HttpMethod: PUT
+    AuthorizationType: AWS_IAM
+    Integration:
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UpdateTicketFunction.Arn}/invocations'
+
+# GET /categories
+CategoriesGetMethod:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RestApiId: !Ref ApiGateway
+    ResourceId: !Ref CategoriesResource
+    HttpMethod: GET
+    AuthorizationType: AWS_IAM
+    Integration:
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetCategoriesFunction.Arn}/invocations'
+
+# POST /chat
+ChatPostMethod:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RestApiId: !Ref ApiGateway
+    ResourceId: !Ref ChatResource
+    HttpMethod: POST
+    AuthorizationType: AWS_IAM
+    Integration:
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatMessageFunction.Arn}/invocations'
+
+# GET /chat/{ticketId}
+ChatGetMethod:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RestApiId: !Ref ApiGateway
+    ResourceId: !Ref ChatByTicketResource
+    HttpMethod: GET
+    AuthorizationType: AWS_IAM
+    Integration:
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetChatMessagesFunction.Arn}/invocations'
+
+# POST /feedback
+FeedbackPostMethod:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RestApiId: !Ref ApiGateway
+    ResourceId: !Ref FeedbackResource
+    HttpMethod: POST
+    AuthorizationType: AWS_IAM
+    Integration:
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SubmitFeedbackFunction.Arn}/invocations'

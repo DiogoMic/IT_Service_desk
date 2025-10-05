@@ -1,0 +1,1310 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IT Service Desk Application Infrastructure'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues: ['dev', 'staging', 'prod']
+  
+  DBUsername:
+    Type: String
+    Default: 'itservicedesk'
+    NoEcho: true
+  
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+
+Resources:
+  # VPC and Networking
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-vpc'
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-private-1'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-private-2'
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.101.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-public-1'
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.102.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-public-2'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-public-rt'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Security Groups
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS PostgreSQL
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-db-sg'
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda functions
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-lambda-sg'
+
+  # RDS PostgreSQL
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for IT Service Desk database
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-db-subnet-group'
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${Environment}-itservicedesk-db'
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      EngineVersion: '17.6'
+      AllocatedStorage: 20
+      StorageType: gp2
+      DBName: itservicedesk
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: 7
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-itservicedesk-database'
+
+  # S3 Bucket for File Storage
+  FileStorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${Environment}-itservicedesk-files-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  # Cognito User Pool
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${Environment}-itservicedesk-users'
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: custom:role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub '${Environment}-itservicedesk-client'
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - http://localhost:3000
+      LogoutURLs:
+        - http://localhost:3000
+
+  IdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      IdentityPoolName: !Sub '${Environment}ITServiceDeskIdentity'
+      AllowUnauthenticatedIdentities: false
+      CognitoIdentityProviders:
+        - ClientId: !Ref UserPoolClient
+          ProviderName: !GetAtt UserPool.ProviderName
+
+  # IAM Roles
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Environment}-itservicedesk-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: DatabaseAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds:DescribeDBInstances
+                  - rds:Connect
+                Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${Database}'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub 'arn:aws:s3:::${FileStorageBucket}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub 'arn:aws:s3:::${FileStorageBucket}'
+        - PolicyName: SESAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: '*'
+        - PolicyName: SNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref NotificationTopic
+
+  CognitoAuthenticatedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Environment}-itservicedesk-authenticated-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'cognito-identity.amazonaws.com:aud': !Ref IdentityPool
+              'ForAnyValue:StringLike':
+                'cognito-identity.amazonaws.com:amr': authenticated
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub 'arn:aws:s3:::${FileStorageBucket}/uploads/*'
+
+  IdentityPoolRoleAttachment:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId: !Ref IdentityPool
+      Roles:
+        authenticated: !GetAtt CognitoAuthenticatedRole.Arn
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${Environment}-itservicedesk-api'
+      Description: IT Service Desk API
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+
+
+  # API Gateway Resources
+  TicketsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: tickets
+
+  TicketByIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref TicketsResource
+      PathPart: '{id}'
+
+  CategoriesResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: categories
+
+  ChatResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: chat
+
+  ChatByTicketResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ChatResource
+      PathPart: '{ticketId}'
+
+  FeedbackResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: feedback
+
+  # SNS Topic for Notifications
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${Environment}-itservicedesk-notifications'
+      DisplayName: IT Service Desk Notifications
+
+  # Lambda Functions
+  NotificationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-notifications'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import psycopg2
+          import os
+          
+          ses = boto3.client('ses')
+          
+          def handler(event, context):
+              try:
+                  for record in event['Records']:
+                      message = json.loads(record['Sns']['Message'])
+                      
+                      if message['type'] == 'ticket_created':
+                          send_ticket_created_notification(message)
+                      elif message['type'] == 'ticket_assigned':
+                          send_ticket_assigned_notification(message)
+                      elif message['type'] == 'ticket_resolved':
+                          send_ticket_resolved_notification(message)
+                      elif message['type'] == 'chat_message':
+                          send_chat_notification(message)
+                  
+                  return {'statusCode': 200}
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  return {'statusCode': 500}
+          
+          def send_ticket_created_notification(data):
+              # Get IT team emails
+              conn = psycopg2.connect(
+                  host=os.environ['DB_HOST'],
+                  database=os.environ['DB_NAME'],
+                  user=os.environ['DB_USER'],
+                  password=os.environ['DB_PASSWORD']
+              )
+              cursor = conn.cursor()
+              cursor.execute("SELECT email FROM profiles WHERE role = 'it_team'")
+              it_emails = [row[0] for row in cursor.fetchall()]
+              conn.close()
+              
+              for email in it_emails:
+                  ses.send_email(
+                      Source=os.environ['FROM_EMAIL'],
+                      Destination={'ToAddresses': [email]},
+                      Message={
+                          'Subject': {'Data': f"New Ticket Created: {data['ticket_number']}"},
+                          'Body': {
+                              'Html': {
+                                  'Data': f"""
+                                  <h2>New Support Ticket Created</h2>
+                                  <p><strong>Ticket:</strong> {data['ticket_number']}</p>
+                                  <p><strong>Title:</strong> {data['title']}</p>
+                                  <p><strong>Priority:</strong> {data['priority']}</p>
+                                  <p><strong>Created by:</strong> {data['user_name']} ({data['user_email']})</p>
+                                  <p>Please log in to assign and manage this ticket.</p>
+                                  """
+                              }
+                          }
+                      }
+                  )
+          
+          def send_ticket_assigned_notification(data):
+              ses.send_email(
+                  Source=os.environ['FROM_EMAIL'],
+                  Destination={'ToAddresses': [data['user_email']]},
+                  Message={
+                      'Subject': {'Data': f"Ticket Assigned: {data['ticket_number']}"},
+                      'Body': {
+                          'Html': {
+                              'Data': f"""
+                              <h2>Your Ticket Has Been Assigned</h2>
+                              <p><strong>Ticket:</strong> {data['ticket_number']}</p>
+                              <p><strong>Title:</strong> {data['title']}</p>
+                              <p><strong>Assigned to:</strong> {data['assigned_to_name']}</p>
+                              <p>Your ticket is now being worked on by our IT team.</p>
+                              """
+                          }
+                      }
+                  }
+              )
+          
+          def send_ticket_resolved_notification(data):
+              feedback_url = f"{os.environ.get('FRONTEND_URL', 'https://yourapp.com')}/feedback/{data['ticket_id']}"
+              ses.send_email(
+                  Source=os.environ['FROM_EMAIL'],
+                  Destination={'ToAddresses': [data['user_email']]},
+                  Message={
+                      'Subject': {'Data': f"Ticket Resolved: {data['ticket_number']}"},
+                      'Body': {
+                          'Html': {
+                              'Data': f"""
+                              <h2>Your Ticket Has Been Resolved</h2>
+                              <p><strong>Ticket:</strong> {data['ticket_number']}</p>
+                              <p><strong>Title:</strong> {data['title']}</p>
+                              <p>Your support request has been resolved.</p>
+                              <p><a href="{feedback_url}" style="background: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Provide Feedback</a></p>
+                              """
+                          }
+                      }
+                  }
+              )
+          
+          def send_chat_notification(data):
+              ses.send_email(
+                  Source=os.environ['FROM_EMAIL'],
+                  Destination={'ToAddresses': [data['recipient_email']]},
+                  Message={
+                      'Subject': {'Data': f"New Message - Ticket {data['ticket_number']}"},
+                      'Body': {
+                          'Html': {
+                              'Data': f"""
+                              <h2>New Message on Your Ticket</h2>
+                              <p><strong>Ticket:</strong> {data['ticket_number']}</p>
+                              <p><strong>From:</strong> {data['sender_name']}</p>
+                              <p><strong>Message:</strong></p>
+                              <div style="background: #f3f4f6; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                                  {data['message']}
+                              </div>
+                              <p>Please log in to respond to this message.</p>
+                              """
+                          }
+                      }
+                  }
+              )
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+          FROM_EMAIL: noreply@yourcompany.com
+          FRONTEND_URL: 'https://yourapp.com'
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
+  NotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn: !Ref NotificationTopic
+      Endpoint: !GetAtt NotificationFunction.Arn
+
+  NotificationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref NotificationFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref NotificationTopic
+
+  GetTicketsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-get-tickets'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import psycopg2
+          import os
+          
+          def handler(event, context):
+              try:
+                  conn = psycopg2.connect(
+                      host=os.environ['DB_HOST'],
+                      database=os.environ['DB_NAME'],
+                      user=os.environ['DB_USER'],
+                      password=os.environ['DB_PASSWORD']
+                  )
+                  
+                  cursor = conn.cursor()
+                  cursor.execute("SELECT * FROM tickets ORDER BY created_at DESC")
+                  tickets = cursor.fetchall()
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({'tickets': tickets})
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
+  CreateTicketFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-create-ticket'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import psycopg2
+          import boto3
+          import os
+          
+          sns = boto3.client('sns')
+          
+          def handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  
+                  conn = psycopg2.connect(
+                      host=os.environ['DB_HOST'],
+                      database=os.environ['DB_NAME'],
+                      user=os.environ['DB_USER'],
+                      password=os.environ['DB_PASSWORD']
+                  )
+                  
+                  cursor = conn.cursor()
+                  cursor.execute("""
+                      INSERT INTO tickets (user_id, category_id, title, description, priority)
+                      VALUES (%s, %s, %s, %s, %s)
+                      RETURNING id, ticket_number
+                  """, (body['user_id'], body['category_id'], body['title'], body['description'], body['priority']))
+                  
+                  result = cursor.fetchone()
+                  
+                  # Get user details for notification
+                  cursor.execute("""
+                      SELECT full_name, email FROM profiles WHERE id = %s
+                  """, (body['user_id'],))
+                  user_data = cursor.fetchone()
+                  
+                  conn.commit()
+                  
+                  # Send notification
+                  sns.publish(
+                      TopicArn=os.environ['SNS_TOPIC_ARN'],
+                      Message=json.dumps({
+                          'type': 'ticket_created',
+                          'ticket_id': str(result[0]),
+                          'ticket_number': result[1],
+                          'title': body['title'],
+                          'priority': body['priority'],
+                          'user_name': user_data[0],
+                          'user_email': user_data[1]
+                      })
+                  )
+                  
+                  return {
+                      'statusCode': 201,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({'id': result[0], 'ticket_number': result[1]})
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+          SNS_TOPIC_ARN: !Ref NotificationTopic
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
+  GetCategoriesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-get-categories'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import psycopg2
+          import os
+          
+          def handler(event, context):
+              try:
+                  conn = psycopg2.connect(
+                      host=os.environ['DB_HOST'],
+                      database=os.environ['DB_NAME'],
+                      user=os.environ['DB_USER'],
+                      password=os.environ['DB_PASSWORD']
+                  )
+                  
+                  cursor = conn.cursor()
+                  cursor.execute("SELECT * FROM ticket_categories ORDER BY name")
+                  categories = cursor.fetchall()
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({'categories': categories})
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
+  ChatMessageFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-chat-message'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import psycopg2
+          import boto3
+          import os
+          
+          sns = boto3.client('sns')
+          
+          def handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  
+                  conn = psycopg2.connect(
+                      host=os.environ['DB_HOST'],
+                      database=os.environ['DB_NAME'],
+                      user=os.environ['DB_USER'],
+                      password=os.environ['DB_PASSWORD']
+                  )
+                  
+                  cursor = conn.cursor()
+                  
+                  # Insert chat message
+                  cursor.execute("""
+                      INSERT INTO ticket_chat_messages (ticket_id, user_id, message)
+                      VALUES (%s, %s, %s)
+                      RETURNING id
+                  """, (body['ticket_id'], body['user_id'], body['message']))
+                  
+                  message_id = cursor.fetchone()[0]
+                  
+                  # Get ticket and user details for notification
+                  cursor.execute("""
+                      SELECT t.ticket_number, t.title, t.user_id, t.assigned_to,
+                             creator.email as creator_email, creator.full_name as creator_name,
+                             assigned.email as assigned_email, assigned.full_name as assigned_name,
+                             sender.full_name as sender_name, sender.role as sender_role
+                      FROM tickets t
+                      JOIN profiles creator ON t.user_id = creator.id
+                      LEFT JOIN profiles assigned ON t.assigned_to = assigned.id
+                      JOIN profiles sender ON sender.id = %s
+                      WHERE t.id = %s
+                  """, (body['user_id'], body['ticket_id']))
+                  
+                  ticket_data = cursor.fetchone()
+                  conn.commit()
+                  
+                  # Determine recipient based on sender role
+                  if ticket_data[9] == 'it_team':  # sender_role
+                      # IT team member sent message, notify ticket creator
+                      recipient_email = ticket_data[4]  # creator_email
+                  else:
+                      # User sent message, notify assigned IT member
+                      recipient_email = ticket_data[6] if ticket_data[6] else None  # assigned_email
+                  
+                  if recipient_email:
+                      sns.publish(
+                          TopicArn=os.environ['SNS_TOPIC_ARN'],
+                          Message=json.dumps({
+                              'type': 'chat_message',
+                              'ticket_id': body['ticket_id'],
+                              'ticket_number': ticket_data[0],
+                              'sender_name': ticket_data[8],
+                              'message': body['message'],
+                              'recipient_email': recipient_email
+                          })
+                      )
+                  
+                  return {
+                      'statusCode': 201,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({'id': str(message_id)})
+                  }
+                  
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+          SNS_TOPIC_ARN: !Ref NotificationTopic
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
+  GetChatMessagesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-get-chat-messages'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import psycopg2
+          import os
+          
+          def handler(event, context):
+              try:
+                  ticket_id = event['pathParameters']['ticketId']
+                  
+                  conn = psycopg2.connect(
+                      host=os.environ['DB_HOST'],
+                      database=os.environ['DB_NAME'],
+                      user=os.environ['DB_USER'],
+                      password=os.environ['DB_PASSWORD']
+                  )
+                  
+                  cursor = conn.cursor()
+                  cursor.execute("""
+                      SELECT tcm.*, p.full_name, p.role
+                      FROM ticket_chat_messages tcm
+                      JOIN profiles p ON tcm.user_id = p.id
+                      WHERE tcm.ticket_id = %s
+                      ORDER BY tcm.created_at ASC
+                  """, (ticket_id,))
+                  
+                  messages = cursor.fetchall()
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({'messages': messages}, default=str)
+                  }
+                  
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
+  SubmitFeedbackFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-submit-feedback'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import psycopg2
+          import os
+          
+          def handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  
+                  conn = psycopg2.connect(
+                      host=os.environ['DB_HOST'],
+                      database=os.environ['DB_NAME'],
+                      user=os.environ['DB_USER'],
+                      password=os.environ['DB_PASSWORD']
+                  )
+                  
+                  cursor = conn.cursor()
+                  cursor.execute("""
+                      INSERT INTO ticket_feedback (ticket_id, user_id, rating, comments)
+                      VALUES (%s, %s, %s, %s)
+                      ON CONFLICT (ticket_id) DO UPDATE SET
+                      rating = EXCLUDED.rating,
+                      comments = EXCLUDED.comments,
+                      created_at = now()
+                      RETURNING id
+                  """, (body['ticket_id'], body['user_id'], body['rating'], body.get('comments', '')))
+                  
+                  feedback_id = cursor.fetchone()[0]
+                  conn.commit()
+                  
+                  return {
+                      'statusCode': 201,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({'id': str(feedback_id)})
+                  }
+                  
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
+  UpdateTicketFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-update-ticket'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import psycopg2
+          import boto3
+          import os
+          
+          sns = boto3.client('sns')
+          
+          def handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  ticket_id = event['pathParameters']['id']
+                  
+                  conn = psycopg2.connect(
+                      host=os.environ['DB_HOST'],
+                      database=os.environ['DB_NAME'],
+                      user=os.environ['DB_USER'],
+                      password=os.environ['DB_PASSWORD']
+                  )
+                  
+                  cursor = conn.cursor()
+                  
+                  # Get current ticket data
+                  cursor.execute("""
+                      SELECT t.*, p.full_name, p.email
+                      FROM tickets t
+                      JOIN profiles p ON t.user_id = p.id
+                      WHERE t.id = %s
+                  """, (ticket_id,))
+                  
+                  old_ticket = cursor.fetchone()
+                  
+                  # Update ticket
+                  update_fields = []
+                  values = []
+                  
+                  if 'status' in body:
+                      update_fields.append('status = %s')
+                      values.append(body['status'])
+                  
+                  if 'assigned_to' in body:
+                      update_fields.append('assigned_to = %s')
+                      values.append(body['assigned_to'])
+                  
+                  values.append(ticket_id)
+                  
+                  cursor.execute(f"""
+                      UPDATE tickets SET {', '.join(update_fields)}, updated_at = now()
+                      WHERE id = %s
+                  """, values)
+                  
+                  # Check for assignment change
+                  if 'assigned_to' in body and body['assigned_to'] != old_ticket[9]:
+                      cursor.execute("SELECT full_name FROM profiles WHERE id = %s", (body['assigned_to'],))
+                      assigned_user = cursor.fetchone()
+                      
+                      sns.publish(
+                          TopicArn=os.environ['SNS_TOPIC_ARN'],
+                          Message=json.dumps({
+                              'type': 'ticket_assigned',
+                              'ticket_id': ticket_id,
+                              'ticket_number': old_ticket[1],
+                              'title': old_ticket[4],
+                              'user_email': old_ticket[16],
+                              'assigned_to_name': assigned_user[0] if assigned_user else 'Unknown'
+                          })
+                      )
+                  
+                  # Check for resolution
+                  if 'status' in body and body['status'] == 'resolved' and old_ticket[6] != 'resolved':
+                      sns.publish(
+                          TopicArn=os.environ['SNS_TOPIC_ARN'],
+                          Message=json.dumps({
+                              'type': 'ticket_resolved',
+                              'ticket_id': ticket_id,
+                              'ticket_number': old_ticket[1],
+                              'title': old_ticket[4],
+                              'user_email': old_ticket[16]
+                          })
+                      )
+                  
+                  conn.commit()
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({'success': True})
+                  }
+                  
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+          SNS_TOPIC_ARN: !Ref NotificationTopic
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
+  # Lambda Permissions for API Gateway
+  GetTicketsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetTicketsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  CreateTicketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateTicketFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  GetCategoriesPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetCategoriesFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  UpdateTicketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateTicketFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  ChatMessagePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ChatMessageFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  GetChatMessagesPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetChatMessagesFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  SubmitFeedbackPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SubmitFeedbackFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # API Gateway Methods
+  TicketsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TicketsResource
+      HttpMethod: GET
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetTicketsFunction.Arn}/invocations'
+
+  TicketsPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TicketsResource
+      HttpMethod: POST
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateTicketFunction.Arn}/invocations'
+
+  TicketsPutMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TicketByIdResource
+      HttpMethod: PUT
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UpdateTicketFunction.Arn}/invocations'
+
+  CategoriesGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref CategoriesResource
+      HttpMethod: GET
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetCategoriesFunction.Arn}/invocations'
+
+  ChatPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ChatResource
+      HttpMethod: POST
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatMessageFunction.Arn}/invocations'
+
+  ChatGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ChatByTicketResource
+      HttpMethod: GET
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetChatMessagesFunction.Arn}/invocations'
+
+  FeedbackPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref FeedbackResource
+      HttpMethod: POST
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SubmitFeedbackFunction.Arn}/invocations'
+
+  # API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - TicketsGetMethod
+      - TicketsPostMethod
+      - TicketsPutMethod
+      - CategoriesGetMethod
+      - ChatPostMethod
+      - ChatGetMethod
+      - FeedbackPostMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+
+Outputs:
+  DatabaseEndpoint:
+    Description: RDS PostgreSQL endpoint
+    Value: !GetAtt Database.Endpoint.Address
+    Export:
+      Name: !Sub '${Environment}-itservicedesk-db-endpoint'
+
+  ApiGatewayUrl:
+    Description: API Gateway URL
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${Environment}-itservicedesk-api-url'
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${Environment}-itservicedesk-user-pool-id'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${Environment}-itservicedesk-user-pool-client-id'
+
+  IdentityPoolId:
+    Description: Cognito Identity Pool ID
+    Value: !Ref IdentityPool
+    Export:
+      Name: !Sub '${Environment}-itservicedesk-identity-pool-id'
+
+  S3BucketName:
+    Description: S3 Bucket for file storage
+    Value: !Ref FileStorageBucket
+    Export:
+      Name: !Sub '${Environment}-itservicedesk-s3-bucket'
+
