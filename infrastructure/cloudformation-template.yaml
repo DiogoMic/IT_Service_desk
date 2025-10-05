@@ -225,10 +225,11 @@ Resources:
           AttributeDataType: String
           Required: true
           Mutable: true
-        - Name: custom:role
+        - Name: role
           AttributeDataType: String
           Required: false
           Mutable: true
+          DeveloperOnlyAttribute: false
 
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
