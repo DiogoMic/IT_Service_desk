@@ -225,11 +225,10 @@ Resources:
           AttributeDataType: String
           Required: true
           Mutable: true
-        - Name: role
+        - Name: custom:role
           AttributeDataType: String
           Required: false
           Mutable: true
-          DeveloperOnlyAttribute: false
 
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
@@ -359,6 +358,20 @@ Resources:
 
 
   # API Gateway Resources
+  ProfilesResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: profiles
+
+  ProfileByIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ProfilesResource
+      PathPart: '{userId}'
+
   TicketsResource:
     Type: AWS::ApiGateway::Resource
     Properties:
@@ -409,6 +422,91 @@ Resources:
       DisplayName: IT Service Desk Notifications
 
   # Lambda Functions
+  GetUserProfileFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-itservicedesk-get-user-profile'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import psycopg2
+          import os
+          
+          def handler(event, context):
+              try:
+                  cognito_user_id = event['pathParameters']['userId']
+                  
+                  conn = psycopg2.connect(
+                      host=os.environ['DB_HOST'],
+                      database=os.environ['DB_NAME'],
+                      user=os.environ['DB_USER'],
+                      password=os.environ['DB_PASSWORD']
+                  )
+                  
+                  cursor = conn.cursor()
+                  cursor.execute("""
+                      SELECT id, cognito_user_id, email, full_name, role, created_at
+                      FROM profiles 
+                      WHERE cognito_user_id = %s
+                  """, (cognito_user_id,))
+                  
+                  result = cursor.fetchone()
+                  conn.close()
+                  
+                  if result:
+                      profile = {
+                          'id': str(result[0]),
+                          'cognito_user_id': result[1],
+                          'email': result[2],
+                          'full_name': result[3],
+                          'role': result[4],
+                          'created_at': result[5].isoformat() if result[5] else None
+                      }
+                      
+                      return {
+                          'statusCode': 200,
+                          'headers': {
+                              'Access-Control-Allow-Origin': '*',
+                              'Content-Type': 'application/json'
+                          },
+                          'body': json.dumps(profile)
+                      }
+                  else:
+                      return {
+                          'statusCode': 404,
+                          'headers': {
+                              'Access-Control-Allow-Origin': '*',
+                              'Content-Type': 'application/json'
+                          },
+                          'body': json.dumps({'error': 'Profile not found'})
+                      }
+                      
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_NAME: itservicedesk
+          DB_USER: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Timeout: 30
+
   CognitoTriggerFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -1183,6 +1281,14 @@ Resources:
       Timeout: 30
 
   # Lambda Permissions for API Gateway
+  GetUserProfilePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetUserProfileFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
   GetTicketsPermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -1240,6 +1346,18 @@ Resources:
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
 
   # API Gateway Methods
+  ProfilesGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ProfileByIdResource
+      HttpMethod: GET
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetUserProfileFunction.Arn}/invocations'
+
   TicketsGetMethod:
     Type: AWS::ApiGateway::Method
     Properties:
@@ -1328,6 +1446,7 @@ Resources:
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
+      - ProfilesGetMethod
       - TicketsGetMethod
       - TicketsPostMethod
       - TicketsPutMethod

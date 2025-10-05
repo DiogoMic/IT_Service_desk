@@ -1,7 +1,10 @@
+import { useState, useEffect } from 'react';
 import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import { ThemeProvider } from './lib/theme';
 import { NewUserDashboard } from './components/NewUserDashboard';
+import { NewITDashboard } from './components/NewITDashboard';
+import { api } from './lib/supabase';
 
 const formFields = {
   signUp: {
@@ -55,16 +58,60 @@ const components = {
 };
 
 function AppContent({ signOut, user }) {
-  // Mock profile for now - TODO: fetch from database
-  const mockProfile = {
-    full_name: user?.username || 'User',
-    role: 'user'
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user?.userId) {
+      fetchUserProfile(user.userId);
+    }
+  }, [user]);
+
+  const fetchUserProfile = async (userId) => {
+    try {
+      const response = await api.get(`/profiles/${userId}`);
+      const profileData = JSON.parse(response.response.body);
+      setProfile(profileData);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      // Fallback to mock data if API fails
+      setProfile({
+        full_name: 'User',
+        role: 'user'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl mb-4 animate-pulse">
+            <span className="text-3xl">🎫</span>
+          </div>
+          <p className="text-slate-600 font-medium">Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Route to appropriate dashboard based on role
+  if (profile?.role === 'it_team') {
+    return (
+      <NewITDashboard 
+        user={user} 
+        profile={profile} 
+        signOut={signOut} 
+      />
+    );
+  }
 
   return (
     <NewUserDashboard 
       user={user} 
-      profile={mockProfile} 
+      profile={profile} 
       signOut={signOut} 
     />
   );

@@ -1,26 +1,35 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../lib/auth';
 import { api } from '../lib/supabase';
 import { Bell, Plus, Search, ArrowUp, ArrowDown, TrendingUp, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { Sidebar } from './Sidebar';
+// import { Sidebar } from './Sidebar';
 import { ThemeToggle } from './ThemeToggle';
 import { StatusBadge } from './StatusBadge';
 import { PriorityBadge } from './PriorityBadge';
-import { CreateTicketModal } from './CreateTicketModal';
-import { TicketDetails } from './TicketDetails';
-import { TicketListView } from './TicketListView';
-import { TeamPerformanceView } from './TeamPerformanceView';
-import { AnalyticsView } from './AnalyticsView';
-import type { Database } from '../lib/database.types';
+import { SimpleCreateTicketModal } from './SimpleCreateTicketModal';
+// import { TicketDetails } from './TicketDetails';
+// import { TicketListView } from './TicketListView';
+// import { TeamPerformanceView } from './TeamPerformanceView';
+// import { AnalyticsView } from './AnalyticsView';
 
-type Ticket = Database['public']['Tables']['tickets']['Row'] & {
+interface Ticket {
+  id: string;
+  ticket_number: string;
+  title: string;
+  status: string;
+  priority: string;
+  created_at: string;
   ticket_categories: { name: string };
   profiles: { full_name: string; email: string };
   assigned_profile?: { full_name: string } | null;
-};
+}
 
-export function NewITDashboard() {
-  const { profile } = useAuth();
+interface Props {
+  user?: any;
+  profile?: any;
+  signOut?: () => void;
+}
+
+export function NewITDashboard({ user, profile, signOut }: Props) {
   const [activeView, setActiveView] = useState('dashboard');
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,20 +44,11 @@ export function NewITDashboard() {
 
   const fetchTickets = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('tickets')
-      .select(`
-        *,
-        ticket_categories (name),
-        profiles!tickets_user_id_fkey (full_name, email),
-        assigned_profile:profiles!tickets_assigned_to_fkey (full_name)
-      `)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setTickets(data as Ticket[]);
-    }
-    setLoading(false);
+    // TODO: Replace with actual API call
+    setTimeout(() => {
+      setTickets([]);
+      setLoading(false);
+    }, 1000);
   };
 
   const stats = {
@@ -69,15 +69,17 @@ export function NewITDashboard() {
   if (selectedTicket) {
     return (
       <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
-        <Sidebar activeView={activeView} onViewChange={setActiveView} />
-        <div className="flex-1 ml-64">
-          <TicketDetails
-            ticket={selectedTicket}
-            onBack={() => {
-              setSelectedTicket(null);
-              fetchTickets();
-            }}
-          />
+        <div className="flex-1">
+          <div className="p-8">
+            <button 
+              onClick={() => setSelectedTicket(null)}
+              className="mb-4 px-4 py-2 bg-gray-500 text-white rounded"
+            >
+              Back
+            </button>
+            <h1 className="text-2xl font-bold">IT Ticket Details</h1>
+            <p>Ticket: {selectedTicket.title}</p>
+          </div>
         </div>
       </div>
     );
@@ -87,16 +89,25 @@ export function NewITDashboard() {
     switch (activeView) {
       case 'tickets':
         return (
-          <TicketListView
-            tickets={tickets}
-            onTicketClick={setSelectedTicket}
-            onCreateTicket={() => setShowCreateModal(true)}
-          />
+          <div className="p-8">
+            <h1 className="text-2xl font-bold mb-4">All Tickets</h1>
+            <p>Ticket management view - TODO: Implement</p>
+          </div>
         );
       case 'team':
-        return <TeamPerformanceView tickets={tickets} />;
+        return (
+          <div className="p-8">
+            <h1 className="text-2xl font-bold mb-4">Team Performance</h1>
+            <p>Team analytics - TODO: Implement</p>
+          </div>
+        );
       case 'analytics':
-        return <AnalyticsView tickets={tickets} />;
+        return (
+          <div className="p-8">
+            <h1 className="text-2xl font-bold mb-4">Analytics</h1>
+            <p>Analytics dashboard - TODO: Implement</p>
+          </div>
+        );
       case 'dashboard':
       default:
         return (
@@ -368,9 +379,9 @@ export function NewITDashboard() {
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
-      <Sidebar activeView={activeView} onViewChange={setActiveView} />
+      {/* <Sidebar activeView={activeView} onViewChange={setActiveView} /> */}
 
-      <div className="flex-1 ml-64 overflow-auto">
+      <div className="flex-1 overflow-auto">
         <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10">
           <div className="px-8 py-4">
             <div className="flex items-center justify-between">
@@ -409,7 +420,7 @@ export function NewITDashboard() {
         {renderContent()}
       </div>
 
-      {showCreateModal && <CreateTicketModal onClose={() => setShowCreateModal(false)} onSuccess={fetchTickets} />}
+      {showCreateModal && <SimpleCreateTicketModal onClose={() => setShowCreateModal(false)} onSuccess={fetchTickets} />}
     </div>
   );
 }

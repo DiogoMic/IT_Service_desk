@@ -5,7 +5,7 @@ import { Bell, Plus, Search, Clock, CheckCircle2, MessageSquare, AlertCircle } f
 import { ThemeToggle } from './ThemeToggle';
 import { StatusBadge } from './StatusBadge';
 import { PriorityBadge } from './PriorityBadge';
-// import { CreateTicketModal } from './CreateTicketModal';
+import { SimpleCreateTicketModal } from './SimpleCreateTicketModal';
 // import { TicketDetails } from './TicketDetails';
 // import { FeedbackModal } from './FeedbackModal';
 
@@ -428,7 +428,7 @@ export function NewUserDashboard({ user, profile, signOut }: Props) {
         {renderContent()}
       </div>
 
-      {/* {showCreateModal && <CreateTicketModal onClose={() => setShowCreateModal(false)} onSuccess={fetchTickets} />} */}
+      {showCreateModal && <SimpleCreateTicketModal onClose={() => setShowCreateModal(false)} onSuccess={fetchTickets} />}
       {/* {feedbackTicket && (
         <FeedbackModal ticket={feedbackTicket} onClose={() => setFeedbackTicket(null)} onSuccess={fetchTickets} />
       )} */}
