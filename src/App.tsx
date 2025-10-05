@@ -1,7 +1,7 @@
 import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import { ThemeProvider } from './lib/theme';
-import { NewUserDashboard } from './components/NewUserDashboard';
+import { SimpleDashboard } from './components/SimpleDashboard';
 
 const formFields = {
   signUp: {
@@ -68,7 +68,7 @@ function AppContent({ signOut, user }) {
           Sign out
         </button>
       </div>
-      <NewUserDashboard />
+      <SimpleDashboard />
     </div>
   );
 }
